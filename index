@@ -1,0 +1,98 @@
+import asyncio
+import time
+import random
+from aiogram import Bot, Dispatcher, types, executor
+from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
+
+API_TOKEN = '8629277887:AAH4C7Ja1nvdKousuHnDY7aRRU0b6nYSqVE'
+# ВСТАВЬ ССЫЛКИ НА ФОТО ТУТ
+PHOTO_START = 'https://repgyetdcodkynrbxocg.supabase.co/storage/v1/object/public/images/telegram-1777842785852-e56dfbf6.jpg'
+PHOTO_WIN = 'https://repgyetdcodkynrbxocg.supabase.co/storage/v1/object/public/images/telegram-1777842798148-ff2bc794.jpg'
+PHOTO_LOSE = 'https://repgyetdcodkynrbxocg.supabase.co/storage/v1/object/public/images/telegram-1777842793773-c590d407.jpg'
+bot = Bot(token=API_TOKEN)
+dp = Dispatcher(bot)
+
+games = {}
+
+# Проверка на "Андрея"
+def is_it_andrey(text):
+    forbidden = ['андрей', 'андрюха', 'андрюша', 'андрейка']
+    return any(word in text.lower() for word in forbidden)
+
+@dp.message_handler(lambda message: is_it_andrey(message.text))
+async def andrey_trigger(message: types.Message):
+    await message.reply("Слышь! Я те какой Андрюха? Я Донецкий! Еще раз так скажешь — бан быстрее, чем я банку энергетика допью.")
+
+@dp.message_handler(commands=['play'])
+async def start_game(message: types.Message):
+    user_id = message.from_user.id
+    games[user_id] = {'clicks': 0, 'active': True}
+    
+    kb = InlineKeyboardMarkup()
+    kb.add(InlineKeyboardButton("🌯 СЪЕСТЬ КУСОЧЕК (0/10)", callback_data="click"))
+    
+    await message.answer_photo(
+        photo=PHOTO_START,
+        caption="Короче, расклад такой: у тебя 15 секунд, чтобы я сожрал этот донер.\nЖми на кнопку, не тупи! Погнали!",
+        reply_markup=kb
+    )
+    
+    await asyncio.sleep(15)
+    
+    if user_id in games and games[user_id]['active']:
+        games[user_id]['active'] = False
+        # Проигрыш: меняем фото на злое
+        await message.answer_photo(
+            photo=PHOTO_LOSE,
+            caption="ФУ-У-У! Ну ты и тормоз! Из-за тебя я остался голодным. Донецкий в бешенстве! В бан захотел?"
+        )
+        del games[user_id]
+
+@dp.callback_query_handler(lambda c: c.data == 'click')
+async def process_click(callback_query: types.CallbackQuery):
+    user_id = callback_query.from_user.id
+    
+    if user_id not in games or not games[user_id]['active']:
+        return
+
+    games[user_id]['clicks'] += 1
+    count = games[user_id]['clicks']
+    
+    if count < 10:
+        kb = InlineKeyboardMarkup()
+        kb.add(InlineKeyboardButton(f"🌯 СЪЕСТЬ КУСОЧЕК ({count}/10)", callback_data="click"))
+        await callback_query.message.edit_reply_markup(reply_markup=kb)
+    else:
+        # Победа: меняем фото на довольное
+        games[user_id]['active'] = False
+        await callback_query.message.delete() # Удаляем старое сообщение с кнопкой
+        await bot.send_photo(
+            chat_id=callback_query.message.chat.id,
+            photo=PHOTO_WIN,
+            caption="О-о-о да-а-а! Красава, родной! 🌯🔥\nДонецкий довольно затягивается дудкой: «От души, накормил. Вот это актив!»"
+        )
+        del games[user_id]
+@dp.inline_handler()
+async def inline_handler(query: types.InlineQuery):
+    if not query.query:
+        await bot.answer_inline_query(query.id, results=[], cache_time=1)
+        return
+
+    # Если ввели что-то, бот возвращает ответ
+    result_id = "game_id" # Уникальный ID результата
+    results = [
+        types.InlineQueryResultArticle(
+            id=result_id,
+            title="Кормить Донецкого!",
+            input_message_content=types.InputTextMessageContent(
+                message_text="/play" # Текст, который отправится
+            ),
+            description="Нажми, чтобы начать игру-кликер.",
+            thumb_url="https://repgyetdcodkynrbxocg.supabase.co/storage/v1/object/public/images/telegram-1777842785852-e56dfbf6.jpg" # Ссылка на аватарку
+        )
+    ]
+    # Отправляем ответ Телеграму
+    await bot.answer_inline_query(query.id, results=results, cache_time=1)
+
+if __name__ == '__main__':
+    executor.start_polling(dp, skip_updates=True)
